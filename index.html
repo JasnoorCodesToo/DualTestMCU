@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dual-MCU Communication Test Bench</title>
+<style>
+:root{--ink:#1b2a41;--mut:#667085;--line:#d9dee5;--alt:#f5f7f9;--acc:#0f6e7a;--pass:#1a7f37;--fail:#c62828;--mono:ui-monospace,"IBM Plex Mono",Menlo,Consolas,monospace}
+*{box-sizing:border-box}body{margin:0;background:#fff;color:var(--ink);font:13px/1.4 Inter,"IBM Plex Sans","Segoe UI",Arial,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:center;padding:10px 20px;border-bottom:1px solid var(--line)}
+h1{font-size:16px;margin:0;font-weight:600}.meta{color:var(--mut)}.meta b{color:var(--ink);font-weight:500}
+.sp{flex:1}main{padding:14px 20px;display:grid;gap:14px;max-width:1500px;margin:auto}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.card,.panel{border:1px solid var(--line);border-radius:3px;background:#fff}.card{padding:8px 12px}
+.card .l{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.04em}.card .v{font-size:20px;font-weight:600;margin-top:2px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:14px}
+.panel>h2{margin:0;padding:7px 12px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;background:var(--alt);border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center}
+.panel>h2 span{margin-left:auto;font-weight:400;text-transform:none;letter-spacing:0;color:var(--mut)}
+.body{padding:10px 12px}.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px}
+label{color:var(--mut);font-size:11px;display:flex;flex-direction:column;gap:2px}
+select,input,button{font:inherit;color:var(--ink);border:1px solid var(--line);border-radius:3px;padding:4px 8px;background:#fff}
+button{cursor:pointer}button.pri{background:var(--acc);border-color:var(--acc);color:#fff}button:disabled{opacity:.45;cursor:not-allowed}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;background:#98a2b3;margin-right:5px}
+.s-connected .dot{background:var(--acc)}.s-connecting .dot{background:#b7791f}.s-error .dot{background:var(--fail)}
+.pill{border:1px solid var(--line);padding:2px 9px;border-radius:3px;background:var(--alt);font-weight:500}
+.chain{display:flex;gap:4px;align-items:center;color:var(--mut)}.chain i{border:1px solid var(--line);padding:1px 7px;border-radius:3px;font-style:normal;background:#fff;color:var(--ink)}
+.chain i.ok{border-color:var(--acc);color:var(--acc)}.chain i.bad{border-color:var(--fail);color:var(--fail)}
+.diag{font-family:var(--mono);font-size:11.5px;background:var(--alt);border:1px solid var(--line);padding:6px 8px;min-height:54px;white-space:pre-wrap}
+.err{color:var(--fail)}.note{color:var(--mut);font-size:12px}
+.tw{overflow:auto;max-height:290px;border:1px solid var(--line)}table{border-collapse:collapse;width:100%;font-size:12px}
+th{position:sticky;top:0;background:var(--alt);text-align:left;font-weight:600;padding:4px 7px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:3px 7px;border-bottom:1px solid #eef1f4;vertical-align:top}td.m{font-family:var(--mono);font-size:11.5px;word-break:break-all;max-width:210px}
+.PASS{color:var(--pass);font-weight:600}.FAIL{color:var(--fail);font-weight:600}tr.f td{background:#fdf6f6}
+.empty{color:var(--mut);padding:14px;text-align:center}.bar{height:8px;background:var(--alt);border:1px solid var(--line);margin:4px 0 2px}
+.bar i{display:block;height:100%}.prog{height:3px;background:var(--alt)}.prog i{display:block;height:100%;background:var(--acc);width:0}
+#log{font-family:var(--mono);font-size:11.5px;height:300px;overflow:auto;border:1px solid var(--line);background:#fff;padding:4px 6px}
+#log div{white-space:pre-wrap;word-break:break-all;border-bottom:1px solid #f1f3f5}.sys{color:var(--mut)}
+canvas{width:100%;height:130px;border:1px solid var(--line)}
+</style></head><body>
+<header>
+ <h1>Dual-MCU Communication Test Bench</h1>
+ <div class="meta">Controller: <b>RP2040</b></div><div class="meta">Device under test: <b>ESP32</b></div>
+ <div class="pill" id="hstate"><span class="dot"></span><span id="hstateTxt">Disconnected</span></div>
+ <div class="meta">Last test: <b id="hlast">none</b></div>
+ <div class="sp"></div>
+ <div class="chain" title="Derived from backend state and last test record"><i id="cHost">Host</i>—<i id="cRP">RP2040</i>—<i id="cDUT">ESP32</i></div>
+</header>
+<main>
+<section class="cards" id="cards"></section>
+
+<div class="grid2">
+ <section class="panel"><h2>Hardware connection <span id="cfgState"></span></h2><div class="body">
+  <div class="row">
+   <label>Serial port<select id="port" style="min-width:210px"></select></label>
+   <button id="refresh" title="Rescan serial ports">Rescan</button>
+   <label>UART baud<select id="ubaud"></select></label>
+   <label>SPI clock (Hz)<input id="sclk" type="number" value="100000" min="1000" max="10000000" step="1000" style="width:100px"></label>
+   <label>SPI mode<select id="smode"><option>0</option><option>1</option><option>2</option><option>3</option></select></label>
+   <label>DUT firmware (declared)<select id="dut"><option value="UART">UART DUT sketch</option><option value="SPI">SPI DUT sketch</option></select></label>
+  </div>
+  <div class="row"><button class="pri" id="connect">Connect</button><button id="disconnect">Disconnect</button>
+   <span class="note">Form values are saved only after the RP2040 acknowledges them. The ESP32 sketch type cannot be detected; declare which one is flashed.</span></div>
+  <div class="diag" id="diag">Hardware not connected.</div>
+ </div></section>
+
+ <section class="panel"><h2>Test execution <span id="runState">Idle</span></h2><div class="prog"><i id="prog"></i></div><div class="body">
+  <div class="row"><label>Test<select id="sel" style="min-width:290px"></select></label>
+   <button class="pri" id="runSel">Run Selected Test</button><button id="runAll">Run All Tests</button><button id="stop">Stop Test Run</button></div>
+  <div class="row"><button id="clear" title="Clears the on-screen log only; stored records are kept">Clear Log</button>
+   <label>Report scope<select id="scope"><option value="">All stored runs</option><option value="latest">Latest run</option></select></label>
+   <button id="csv">Export CSV</button><button id="pdf">Export PDF</button></div>
+  <div class="note" id="msg"></div>
+  <div class="note">Run All Tests runs every test for the declared DUT firmware. Stop takes effect after the current case.</div>
+ </div></section>
+</div>
+
+<section class="panel" id="uartP"><h2>UART testing <span>RP2040 UART0 TX GP28 / RX GP29 ↔ ESP32 UART2 RX GPIO16 / TX GPIO17</span></h2><div class="body">
+ <div class="row"><button class="pri" data-run="UART_1">Run UART Test (ping-pong)</button><button data-suite="UART">Run UART Suite (tests 1–6)</button>
+  <label style="flex-direction:row;align-items:center;gap:6px">Data view<select class="view"><option value="text">Text</option><option value="hex">Hex</option></select></label></div>
+ <div class="tw"><table><thead><tr><th>Time</th><th>Run</th><th>Test / case</th><th>Transmitted</th><th>Received</th><th>Expected</th><th>Result</th><th>Latency ms</th><th>Dur ms</th><th>Error detail</th></tr></thead><tbody id="tUART"></tbody></table></div>
+</div></section>
+
+<section class="panel" id="spiP"><h2>SPI testing <span>RP2040 = master (SPI0), ESP32 = slave (VSPI)</span></h2><div class="body">
+ <div class="row"><button class="pri" data-run="SPI_1">Run SPI Test (basic transfer)</button><button data-suite="SPI">Run SPI Suite (tests 1–3)</button>
+  <span class="note" id="spiCfg">Configuration: not connected.</span></div>
+ <div class="note" style="margin-bottom:6px">PASS/FAIL reflects the bytes the RP2040 reads on MISO. Whether the ESP32 received the MOSI bytes correctly is printed only on the ESP32 serial console and is not captured here.</div>
+ <div class="tw"><table><thead><tr><th>Time</th><th>Run</th><th>Test / case</th><th>Transmitted</th><th>Received</th><th>Expected</th><th>Result</th><th>Dur ms</th><th>Mismatch detail</th></tr></thead><tbody id="tSPI"></tbody></table></div>
+</div></section>
+
+<div class="grid2">
+ <section class="panel"><h2>Live test log
+  <span><label style="flex-direction:row;gap:8px;align-items:center;display:inline-flex">
+  <input type="checkbox" class="flt" value="UART" checked>UART <input type="checkbox" class="flt" value="SPI" checked>SPI
+  <input type="checkbox" class="flt" value="PASS" checked>PASS <input type="checkbox" class="flt" value="FAIL" checked>FAIL
+  <input type="checkbox" class="flt" value="ERR" checked>Errors</label></span></h2>
+  <div class="body"><div id="log"></div></div></section>
+ <section class="panel"><h2>Performance and results</h2><div class="body">
+  <div class="note">Pass / fail distribution</div><div id="dist"><div class="empty">No tests executed.</div></div>
+  <div class="note" style="margin-top:10px">UART round-trip latency, last 100 measured samples (ms)</div>
+  <canvas id="cv" width="560" height="130"></canvas></div></section>
+</div>
+</main>
+<script>
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const api=(p,o)=>fetch(p,o).then(async r=>{const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.detail||(Array.isArray(j.detail)?'Invalid request':r.statusText));return j});
+let ST={state:'disconnected'},TESTS=[],REC=[],LOG=[],VIEW='text',FLT={UART:1,SPI:1,PASS:1,FAIL:1,ERR:1};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const t12=ts=>ts?ts.slice(11,23):'';
+function show(h){ if(!h) return '<span class="note">—</span>'; if(VIEW==='hex') return h.replace(/(..)/g,'$1 ').trim();
+ const b=h.match(/../g).map(x=>parseInt(x,16)); const ok=b.every(c=>c===10||(c>=32&&c<127)); return ok?esc(String.fromCharCode(...b).replace(/\n/g,'⏎')):h.replace(/(..)/g,'$1 ').trim()}
+const ms=u=>u==null?'—':(u/1000).toFixed(3);
+function note(m,err){const e=$('#msg');e.textContent=m||'';e.className=err?'err':'note'}
+
+function renderStatus(){
+ const s=ST.state,L={connected:'Connected',disconnected:'Disconnected',connecting:'Connecting',error:'Error'};
+ $('#hstate').className='pill s-'+s;$('#hstateTxt').textContent=L[s]||s;
+ $('#hlast').textContent=ST.last_test?ST.last_test.replace('T',' ').slice(0,23):'none';
+ const c=ST.cfg,p=ST.pins,ok=s==='connected',busy=ST.running;
+ $('#cfgState').textContent=ok?'Established':'Not established';
+ $('#diag').innerHTML=esc(ok?`Link: ${ST.port}  firmware: ${ST.firmware}\nActive: UART ${c.uart_baud} 8N1 | SPI ${c.spi_baud} Hz, mode ${c.spi_mode}, ${c.bits} bit | DUT firmware (declared): ${ST.dut}\nPins: UART TX GP${p.uart_tx} RX GP${p.uart_rx} | SPI SCK GP${p.sck} MOSI GP${p.mosi} MISO GP${p.miso} CS GP${p.cs}`
+  :(s==='connecting'?`Opening ${ST.port||''} …`:'Hardware not connected.'))+(ST.error?'\n':'')+(ST.error?'':'');
+ if(ST.error)$('#diag').innerHTML+='<span class="err">'+esc(ST.error)+'</span>';
+ $('#spiCfg').textContent=ok?`Active: ${c.spi_baud} Hz, mode ${c.spi_mode}, ${c.bits}-bit, 8-byte frames`:'Configuration: not connected.';
+ $('#connect').disabled=s==='connected'||s==='connecting';$('#disconnect').disabled=s!=='connected'||busy;
+ ['port','ubaud','sclk','smode','dut'].forEach(i=>$('#'+i).disabled=s==='connected'||s==='connecting');
+ const can=ok&&!busy;
+ $('#runSel').disabled=$('#runAll').disabled=!can;$('#stop').disabled=!busy;
+ $$('[data-run],[data-suite]').forEach(b=>{const pr=(b.dataset.run||b.dataset.suite).slice(0,3)==='UAR'?'UART':'SPI';b.disabled=!can||ST.dut!==pr;b.title=ok&&ST.dut!==pr?`DUT firmware is declared as ${ST.dut}`:''});
+ $('#runState').textContent=busy&&ST.progress?`Running ${ST.progress.test} (${ST.progress.index}/${ST.progress.total})`:'Idle';
+ $('#prog').style.width=busy&&ST.progress?(100*(ST.progress.index-1)/ST.progress.total)+'%':'0';
+ $('#cHost').className='ok';$('#cRP').className=ok?'ok':(s==='error'?'bad':'');
+ const last=REC[0];$('#cDUT').className=!ok||!last?'':(last.rx?'ok':'bad');
+ $('#cDUT').title=!ok||!last?'Unverified':(last.rx?'Responded in last test':'No response in last test');
+}
+function row(r,spi){const f=r.result==='FAIL';
+ return `<tr class="${f?'f':''}"><td>${t12(r.ts)}</td><td>${r.run_id}</td><td>${r.test}<br><span class="note">${esc(r.case_id)}</span></td><td class="m">${show(r.tx)}</td><td class="m">${show(r.rx)}</td><td class="m">${show(r.exp)}</td><td class="${r.result}">${r.result}</td>`+
+ (spi?'':`<td>${ms(r.lat_us)}</td>`)+`<td>${ms(r.dur_us)}</td><td>${esc(r.detail)}</td></tr>`}
+function renderTables(){for(const p of ['UART','SPI']){const rs=REC.filter(r=>r.protocol===p).slice(0,150);
+ $('#t'+p).innerHTML=rs.length?rs.map(r=>row(r,p==='SPI')).join(''):`<tr><td colspan="10" class="empty">No ${p} tests executed.</td></tr>`}}
+function renderLog(){const el=$('#log'),stick=el.scrollTop+el.clientHeight>=el.scrollHeight-8;
+ el.innerHTML=LOG.filter(l=>l.k==='sys'||(l.k==='err'?FLT.ERR:(FLT[l.p]&&FLT[l.res]))).map(l=>l.k==='rec'?
+ `<div>${t12(l.ts)} ${l.p} ${l.test}/${esc(l.case)} tx=${l.tx} rx=${l.rx} exp=${l.exp} <span class="${l.res}">${l.res}</span> ${l.dur}ms${l.det?' | '+esc(l.det):''}</div>`:
+ `<div class="${l.k==='err'?'err':'sys'}">${t12(l.ts)} ${esc(l.text)}</div>`).join('');if(stick)el.scrollTop=el.scrollHeight}
+function addLog(o){LOG.push(o);if(LOG.length>3000)LOG.splice(0,500);renderLog()}
+async function loadSummary(){const s=await api('/api/summary'),n=s.total;
+ const cards=[['Total tests executed',n?n:'No tests executed'],['Passed tests',n?s.passed:'—'],['Failed tests',n?s.failed:'—'],['Success rate',n?s.success_rate+' %':'—'],['Avg communication latency',s.avg_latency_ms!=null?s.avg_latency_ms+' ms':'—']];
+ $('#cards').innerHTML=cards.map(c=>`<div class="card"><div class="l">${c[0]}</div><div class="v" ${c[1]==='No tests executed'?'style="font-size:13px;color:var(--mut);font-weight:400"':''}>${c[1]}</div></div>`).join('');
+ $('#dist').innerHTML=n?`<div class="bar"><i style="width:${100*s.passed/n}%;background:var(--pass)"></i></div><span class="PASS">PASS ${s.passed}</span> &nbsp; <span class="FAIL">FAIL ${s.failed}</span> &nbsp; <span class="note">of ${n} records</span>`:'<div class="empty">No tests executed.</div>';
+ const pts=REC.filter(r=>r.lat_us!=null).slice(0,100).reverse().map(r=>r.lat_us/1000),cv=$('#cv'),g=cv.getContext('2d');
+ g.clearRect(0,0,cv.width,cv.height);g.font='11px sans-serif';g.fillStyle='#667085';
+ if(pts.length<2){g.fillText('Insufficient data (need at least 2 latency samples).',10,70);return}
+ const mx=Math.max(...pts),mn=Math.min(...pts),sp=(mx-mn)||1,x=i=>30+i*(cv.width-40)/(pts.length-1),y=v=>115-(v-mn)*95/sp;
+ g.strokeStyle='#0f6e7a';g.beginPath();pts.forEach((v,i)=>i?g.lineTo(x(i),y(v)):g.moveTo(x(i),y(v)));g.stroke();
+ g.fillText(mx.toFixed(2),0,22);g.fillText(mn.toFixed(2),0,118)}
+async function refreshAll(){REC=await api('/api/records?limit=500');renderTables();await loadSummary();renderStatus()}
+let tmr;const soon=()=>{clearTimeout(tmr);tmr=setTimeout(()=>loadSummary().catch(()=>{}),400)};
+
+function sse(){const es=new EventSource('/api/events');
+ es.onmessage=e=>{const m=JSON.parse(e.data);
+  if(m.ev==='status'){ST=m.status;renderStatus();if(ST.state==='error')addLog({k:'err',ts:m.ts,text:ST.error})}
+  else if(m.ev==='record'){const r=m.rec;REC.unshift(r);if(REC.length>2000)REC.pop();renderTables();soon();ST.last_test=r.ts;renderStatus();
+   addLog({k:'rec',ts:r.ts,p:r.protocol,test:r.test,case:r.case_id,tx:show(r.tx),rx:show(r.rx),exp:show(r.exp),res:r.result,dur:ms(r.dur_us),det:r.detail})}
+  else if(m.ev==='progress'){ST.progress=m;renderStatus()}
+  else if(m.ev==='run_start')addLog({k:'sys',ts:m.ts,text:`Run ${m.run_id} started: ${m.tests.join(', ')}`});
+  else if(m.ev==='run_end'){addLog({k:m.status==='error'?'err':'sys',ts:m.ts,text:`Run ${m.run_id} ${m.status}`});refreshAll()}
+  else if(m.ev==='diag')addLog({k:m.level==='error'?'err':'sys',ts:m.ts,text:'RP2040: '+m.msg})};
+ es.onerror=()=>{$('#cHost').className='bad'};es.onopen=()=>{$('#cHost').className='ok'}}
+
+async function ports(){try{const ps=await api('/api/ports');$('#port').innerHTML=ps.length?ps.map(p=>`<option value="${esc(p.device)}">${esc(p.device)} — ${esc(p.description)}${p.likely_rp2040?' (RP2040)':''}</option>`).join(''):'<option value="">No serial ports found</option>'}catch(e){note(e.message,1)}}
+async function run(tests){note('');try{await api('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tests})})}catch(e){note(e.message,1);addLog({k:'err',ts:new Date().toISOString(),text:'Cannot start: '+e.message})}}
+async function exportRep(k){const q=$('#scope').value;try{const r=await fetch(`/api/report.${k}`+(q?`?run_id=${q}`:''));if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||'Export failed')}
+ const u=URL.createObjectURL(await r.blob()),a=document.createElement('a');a.href=u;a.download='dualmcu_report.'+k;a.click();URL.revokeObjectURL(u);note('')}catch(e){note(e.message,1)}}
+
+$('#refresh').onclick=ports;
+$('#connect').onclick=async()=>{note('');if(!$('#port').value)return note('Select a serial port first.',1);
+ try{ST=await api('/api/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({port:$('#port').value,uart_baud:+$('#ubaud').value,spi_baud:+$('#sclk').value,spi_mode:+$('#smode').value,dut:$('#dut').value})});renderStatus()}
+ catch(e){note(e.message,1);ST=await api('/api/status');renderStatus()}};
+$('#disconnect').onclick=async()=>{try{ST=await api('/api/disconnect',{method:'POST'});renderStatus()}catch(e){note(e.message,1)}};
+$('#runSel').onclick=()=>run([$('#sel').value]);
+$('#runAll').onclick=()=>run(TESTS.filter(t=>t.protocol===ST.dut).map(t=>t.id));
+$('#stop').onclick=()=>api('/api/stop',{method:'POST'}).catch(e=>note(e.message,1));
+$('#clear').onclick=()=>{LOG=[];renderLog()};$('#csv').onclick=()=>exportRep('csv');$('#pdf').onclick=()=>exportRep('pdf');
+$$('[data-run]').forEach(b=>b.onclick=()=>run([b.dataset.run]));
+$$('[data-suite]').forEach(b=>b.onclick=()=>run(TESTS.filter(t=>t.protocol===b.dataset.suite).map(t=>t.id)));
+$$('.flt').forEach(c=>c.onchange=()=>{FLT[c.value]=c.checked?1:0;renderLog()});
+$$('.view').forEach(s=>s.onchange=()=>{VIEW=s.value;$$('.view').forEach(x=>x.value=VIEW);renderTables();renderLog()});
+
+(async()=>{try{TESTS=await api('/api/tests');
+ $('#sel').innerHTML=TESTS.map(t=>`<option value="${t.id}">${t.id.replace('_',' ')} — ${t.title}</option>`).join('');
+ $('#ubaud').innerHTML=[9600,19200,38400,57600,115200,230400,460800,921600].map(b=>`<option${b===115200?' selected':''}>${b}</option>`).join('');
+ ST=await api('/api/status');await ports();await refreshAll();sse()}catch(e){note('Backend unreachable: '+e.message,1);$('#cHost').className='bad'}})();
+</script></body></html>

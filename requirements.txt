@@ -1,0 +1,4 @@
+fastapi>=0.110
+uvicorn>=0.29
+pyserial>=3.5
+reportlab>=4.0
